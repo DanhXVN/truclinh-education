@@ -39,8 +39,8 @@ const StudentMonthMoney = ({ studentId, selectedDate, refreshTrigger }) => {
         if (noteError) throw noteError;
 
         const presentDays = (attendanceData || []).filter(a => {
-          return a.status === 'Có mặt' || a.status === true;
-        }).length;
+  return a.status === true || a.status === 'true' || a.status === 'Có mặt';
+}).length;
 
         const sessionMoney = presentDays * 50000;
         const totalNotesMoney = (noteData || []).reduce((sum, n) => sum + (Number(n.money) || 0), 0);
@@ -72,6 +72,8 @@ const StudentMonthMoney = ({ studentId, selectedDate, refreshTrigger }) => {
 };
 
 function App() {
+  const [showArchived, setShowArchived] = useState(false);
+const [archivedStudents, setArchivedStudents] = useState([]);
   const [students, setStudents] = useState([]);
   const [newName, setNewName] = useState('');
   const [attendanceList, setAttendanceList] = useState([]);
@@ -115,7 +117,11 @@ function App() {
 
   const fetchData = async () => {
     try {
-      const { data: stdData } = await supabase.from('students').select('*').order('id', { ascending: true });
+      const { data: stdData } = await supabase
+  .from('students')
+  .select('*')
+  .eq('archived', false)   // ← thêm dòng này
+  .order('id', { ascending: true });
       if (stdData) setStudents(stdData);
 
       const { data: attData } = await supabase.from('attendance').select('student_id').eq('date', today);
@@ -170,7 +176,7 @@ if (!user) {
         .gte('date', fromDate)
         .lte('date', toDate);
 
-      const { data: studentData } = await supabase.from('students').select('id, name');
+      const { data: studentData } = await supabase.from('students').select('id, name').eq('archived', false);
 
       const studentMap = {};
       studentData.forEach(s => {
@@ -202,7 +208,7 @@ if (!user) {
         .select('date, status, student_id')
         .like('date', `${month}%`);
 
-      const { data: studentsData } = await supabase.from('students').select('id, name');
+      const { data: studentsData } = await supabase.from('students').select('id, name').eq('archived', false);
       const { data: notesData } = await supabase
         .from('notes')
         .select('student_id, money, date')
@@ -259,30 +265,48 @@ if (!user) {
     }
   };
 
-  const handleAttendance = async (studentId) => {
-    setLoadingId(studentId);
+const handleAttendance = async (studentId) => {
+  setLoadingId(studentId);
 
-    try {
-      const { data } = await supabase
+  try {
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('student_id', studentId)
+      .eq('date', today);
+
+    if (error) {
+      alert('Lỗi kiểm tra điểm danh: ' + error.message);
+      return;
+    }
+
+    if (data.length === 0) {
+      const { error: insertError } = await supabase
         .from('attendance')
-        .select('*')
+        .insert([{ student_id: studentId, date: today, status: true }]);
+
+      if (insertError) {
+        alert('Lỗi insert: ' + insertError.message);
+        return;
+      }
+    } else {
+      // Nếu đã có nhưng status = false thì update lại thành true
+      await supabase
+        .from('attendance')
+        .update({ status: true })
         .eq('student_id', studentId)
         .eq('date', today);
-
-      if (data.length === 0) {
-        await supabase.from('attendance').insert([
-          { student_id: studentId, date: today, status: true }
-        ]);
-      }
-
-      await fetchData();
-      setRefreshTrigger(t => t + 1);
-    } catch (error) {
-      console.error('Error marking attendance:', error);
-    } finally {
-      setLoadingId(null);
     }
-  };
+
+    await fetchData();
+    setRefreshTrigger(t => t + 1);
+
+  } catch (error) {
+    console.error('Error marking attendance:', error);
+  } finally {
+    setLoadingId(null);
+  }
+};
 
   const handleUncheck = async (studentId) => {
     setLoadingId(studentId);
@@ -358,16 +382,42 @@ if (!user) {
     fontFamily: theme.fontCreative
   };
 
-  const handleDeleteStudent = async (id) => {
-    if (!window.confirm("Xoá học sinh này?")) return;
-    try {
-      await supabase.from('students').delete().eq('id', id);
-      fetchData();
-    } catch (error) {
-      console.error('Error deleting student:', error);
+const handleDeleteStudent = async (id) => {
+  if (!window.confirm("Ẩn học sinh này? Dữ liệu điểm danh vẫn được giữ lại.")) return;
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .update({ archived: true })
+      .eq('id', id);
+    
+    if (error) {
+      alert('LỖI: ' + error.message);  // ← sẽ hiện lỗi cụ thể
+      return;
     }
-  };
+    
+    fetchData();
+  } catch (error) {
+    alert('CATCH LỖI: ' + error.message);
+  }
+};
+const fetchArchivedStudents = async () => {
+  const { data } = await supabase
+    .from('students')
+    .select('*')
+    .eq('archived', true)
+    .order('id', { ascending: true });
+  setArchivedStudents(data || []);
+};
 
+const handleRestoreStudent = async (id) => {
+  if (!window.confirm("Khôi phục học sinh này?")) return;
+  await supabase
+    .from('students')
+    .update({ archived: false })
+    .eq('id', id);
+  fetchData();
+  fetchArchivedStudents();
+};
   const exportToday = async () => {
     try {
       const { data } = await supabase
@@ -410,7 +460,7 @@ if (!user) {
         .gte('date', fromDate)
         .lte('date', toDate);
 
-      const { data: studentsData } = await supabase.from('students').select('id, name');
+      const { data: studentsData } = await supabase.from('students').select('id, name').eq('archived', false);
 
       // ✅ Lấy dữ liệu từ đầu tháng để tính tổng buổi
       const { data: attendanceDataFromMonthStart } = await supabase
@@ -1159,6 +1209,158 @@ if (!user) {
             }}>THÊM</button>
           </div>
         </div>
+
+{/* Nút mở danh sách đã ẩn */}
+<div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
+  <button
+    onClick={() => {
+      const next = !showArchived;
+      setShowArchived(next);
+      if (next) fetchArchivedStudents();
+    }}
+    style={{
+      padding: '10px 28px',
+      background: showArchived
+        ? 'linear-gradient(135deg, #f9a8d4 0%, #c4b5fd 100%)'
+        : 'linear-gradient(135deg, #fce7f3 0%, #ede9fe 100%)',
+      color: '#7C3AED',
+      border: '2px solid #f0abfc',
+      borderRadius: '30px',
+      fontWeight: '700',
+      cursor: 'pointer',
+      fontSize: '13px',
+      fontFamily: theme.fontCreative,
+      boxShadow: '0 4px 15px rgba(196,181,253,0.4)',
+      transition: 'all 0.3s ease',
+      letterSpacing: '0.5px'
+    }}
+    onMouseEnter={e => e.target.style.transform = 'scale(1.05)'}
+    onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+  >
+    {showArchived ? '🙈 Ẩn danh sách' : '🌸 Xem học sinh đã nghỉ'}
+  </button>
+</div>
+
+{/* Danh sách học sinh đã ẩn */}
+{showArchived && (
+  <div style={{
+    marginTop: '20px',
+    padding: '25px',
+    background: 'linear-gradient(135deg, #fff0f9 0%, #f5f0ff 100%)',
+    borderRadius: '28px',
+    border: '2px dashed #f0abfc',
+    boxShadow: '0 8px 25px rgba(240,171,252,0.15)'
+  }}>
+    {/* Tiêu đề */}
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px',
+      marginBottom: '18px'
+    }}>
+      <span style={{ fontSize: '22px' }}>🌙</span>
+      <span style={{
+        fontWeight: '800',
+        fontSize: '15px',
+        background: 'linear-gradient(90deg, #ec4899, #8b5cf6)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        letterSpacing: '1px'
+      }}>
+        Các bé đã nghỉ
+      </span>
+      <span style={{ fontSize: '22px' }}>🌙</span>
+    </div>
+
+    {archivedStudents.length === 0 ? (
+      <div style={{
+        textAlign: 'center',
+        padding: '20px',
+        color: '#d8b4fe',
+        fontSize: '14px',
+        fontWeight: '600'
+      }}>
+        ✨ Chưa có bé nào nghỉ học ✨
+      </div>
+    ) : (
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '12px',
+        justifyContent: 'center'
+      }}>
+        {archivedStudents.map(s => (
+          <div key={s.id} style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '16px 18px',
+            background: '#fff',
+            borderRadius: '22px',
+            border: '2px solid #fbcfe8',
+            boxShadow: '0 4px 12px rgba(249,168,212,0.2)',
+            minWidth: '110px',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
+          onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            {/* Avatar chữ cái */}
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #f9a8d4 0%, #c4b5fd 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '18px',
+              fontWeight: '800',
+              color: '#fff',
+              boxShadow: '0 4px 10px rgba(196,181,253,0.4)'
+            }}>
+              {s.name.charAt(0).toUpperCase()}
+            </div>
+
+            {/* Tên */}
+            <div style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: '#7C3AED',
+              textAlign: 'center'
+            }}>
+              {s.name}
+            </div>
+
+            {/* Nút khôi phục */}
+            <button
+              onClick={() => handleRestoreStudent(s.id)}
+              style={{
+                padding: '5px 14px',
+                background: 'linear-gradient(135deg, #34d399 0%, #059669 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '15px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: '700',
+                fontFamily: theme.fontCreative,
+                boxShadow: '0 3px 8px rgba(52,211,153,0.35)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={e => e.target.style.transform = 'scale(1.08)'}
+              onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+            >
+              ↩️ Học lại
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
         <div style={{ ...cardBase, backgroundColor: '#FAF5FF' }}>
           <h4 style={{ margin: '0 0 15px 0', color: '#7E22CE', fontSize: '18px' }}>📝 Nhật ký hôm nay</h4>
           <select style={{ ...inputBase, marginBottom: '10px' }} value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
@@ -1167,16 +1369,22 @@ if (!user) {
           </select>
           <textarea style={{ ...inputBase, height: '80px', resize: 'none' }} value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Lời nhắn cho phụ huynh..." />
           <input
-            type="number"
-            value={noteMoney}
-            onChange={(e) => setNoteMoney(e.target.value)} // ✅ SỬA: không ép kiểu Number, giữ string
-            placeholder="Tiền phát sinh"
-            style={{
-              ...inputBase,
-              marginTop: '10px',
-              height: '40px'
-            }}
-          />
+  type="text"
+  inputMode="numeric"
+  value={noteMoney ? Number(noteMoney).toLocaleString('vi-VN') : ''}
+  onChange={(e) => {
+    const raw = e.target.value.replace(/\./g, '').replace(/,/g, '');
+    if (raw === '' || /^\d+$/.test(raw)) {
+      setNoteMoney(raw);
+    }
+  }}
+  placeholder="Tiền phát sinh (nếu có)"
+  style={{
+    ...inputBase,
+    marginTop: '10px',
+    height: '40px'
+  }}
+/>
           <button onClick={handleSaveNote} style={{
             width: '100%',
             marginTop: '10px',
