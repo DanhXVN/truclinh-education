@@ -4,8 +4,8 @@ import { supabase } from './supabaseClient';
 const parseMoneyValue = (value) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value !== 'string') return 0;
-  const digitsOnly = value.replace(/[^\d-]/g, '');
-  const parsed = Number(digitsOnly);
+  const normalized = value.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
@@ -16,7 +16,13 @@ const toYMD = (dateObj) => {
   return `${y}-${m}-${d}`;
 };
 
-const formatMoney = (value) => `${value.toLocaleString('vi-VN')}đ`;
+const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+const formatMoneyWithSign = (value) => {
+  const amount = Number(value || 0);
+  if (amount > 0) return `+${amount.toLocaleString('vi-VN')}đ`;
+  if (amount < 0) return `${amount.toLocaleString('vi-VN')}đ`;
+  return '0đ';
+};
 
 function InvoiceModal({ student, yearMonth, onClose }) {
   const [invoiceData, setInvoiceData] = useState(null);
@@ -112,7 +118,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
           content: n.content?.trim() || 'Phát sinh',
           money: parseMoneyValue(n.money)
         })))
-        .filter((n) => n.money > 0 || n.content !== 'Phát sinh');
+        .filter((n) => n.money !== 0 || n.content !== 'Phát sinh');
 
       setInvoiceData({
         details: detailData,
@@ -234,7 +240,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 1100,
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,.52)', backdropFilter: 'blur(6px)', zIndex: 1100,
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto'
       }}
       onClick={onClose}
@@ -242,7 +248,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
       <div
         style={{
           width: '100%', maxWidth: 920, maxHeight: '92vh', overflowY: 'auto',
-          borderRadius: 28, background: 'linear-gradient(180deg,#ffffff 0%,#fafaff 100%)',
+          borderRadius: 28, background: 'linear-gradient(180deg,#ffffff 0%,#f8f7ff 100%)',
           boxShadow: '0 20px 64px rgba(76,63,160,.35)', padding: isMobile ? 16 : 24,
           border: '1px solid #e5e7eb'
         }}
@@ -264,7 +270,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
                 Trúc Linh Education Center
               </h2>
               <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b', fontWeight: 700 }}>
-                PHIẾU HỌC PHÍ • Tháng {yearMonth}
+                PHIẾU THU HỌC PHÍ • Tháng {yearMonth}
               </p>
             </div>
           </div>
@@ -294,7 +300,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
             <button
               onClick={exportPDF}
               style={{
-                border: 'none', background: 'linear-gradient(135deg,#ef4444 0%,#f97316 100%)', color: '#fff',
+                border: 'none', background: 'linear-gradient(135deg,#ef4444 0%,#f97316 100%)', boxShadow: '0 8px 20px rgba(249,115,22,.24)', color: '#fff',
                 borderRadius: 999, fontWeight: 800, fontSize: 13, padding: '10px 16px', cursor: 'pointer',
                 width: isMobile ? '100%' : 'auto'
               }}
@@ -375,14 +381,14 @@ function InvoiceModal({ student, yearMonth, onClose }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#b91c1c' }}><span>Vắng</span><span>{invoiceData.absentDays}</span></div>
               <div style={{ borderTop: '1px dashed #c4b5fd', margin: '2px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#4338ca' }}><span>Tiền buổi học</span><span>{formatMoney(invoiceData.totalSessionMoney)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#059669' }}><span>Tiền phát sinh</span><span>{formatMoney(invoiceData.totalNotesMoney)}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 18, color: '#6c63ff' }}><span>Tổng cộng</span><span>{formatMoney(invoiceData.totalMoney)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: invoiceData.totalNotesMoney < 0 ? '#dc2626' : '#059669' }}><span>Tiền phát sinh/hoàn trả</span><span>{formatMoney(invoiceData.totalNotesMoney)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 18, color: '#6c63ff', background: '#fff', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #ddd6fe' }}><span>Tổng cộng</span><span>{formatMoney(invoiceData.totalMoney)}</span></div>
             </div>
           </div>
         </div>
 
         <div style={{ borderRadius: 16, border: '1.5px solid #e2e8f0', background: '#fff', padding: 14, marginBottom: 14 }}>
-          <p style={{ margin: '0 0 8px', fontWeight: 800, color: '#0f766e', fontSize: 14 }}>📝 Tóm tắt tiền phát sinh</p>
+          <p style={{ margin: '0 0 8px', fontWeight: 800, color: '#0f766e', fontSize: 14 }}>📝 Tóm tắt phát sinh / hoàn trả</p>
           {invoiceData.noteSummary.length === 0 ? (
             <p style={{ margin: 0, color: '#64748b', fontWeight: 600, fontSize: 13 }}>Không có phát sinh trong tháng.</p>
           ) : (
@@ -393,7 +399,7 @@ function InvoiceModal({ student, yearMonth, onClose }) {
                   padding: '8px 10px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0'
                 }}>
                   <span style={{ color: '#334155', fontWeight: 700, fontSize: 12 }}>{note.date} • {note.content}</span>
-                  <span style={{ color: '#16a34a', fontWeight: 800, fontSize: 12 }}>{note.money > 0 ? formatMoney(note.money) : '-'}</span>
+                  <span style={{ color: note.money < 0 ? '#dc2626' : '#16a34a', fontWeight: 900, fontSize: 12 }}>{formatMoneyWithSign(note.money)}</span>
                 </div>
               ))}
               {invoiceData.noteSummary.length > 8 && (

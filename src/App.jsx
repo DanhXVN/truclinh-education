@@ -8,10 +8,19 @@ import InvoiceModal from './InvoiceModal';
 const parseMoneyValue = (value) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value !== 'string') return 0;
-  const digitsOnly = value.replace(/[^\d-]/g, '');
-  const parsed = Number(digitsOnly);
+  const normalized = value.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+const formatMoneyWithSign = (value) => {
+  const amount = Number(value || 0);
+  if (amount > 0) return `+${amount.toLocaleString('vi-VN')}đ`;
+  if (amount < 0) return `${amount.toLocaleString('vi-VN')}đ`;
+  return '0đ';
+};
+const moneyToneClass = (value) => Number(value || 0) < 0 ? 'negative' : 'positive';
 
 // ⭐ TỔNG TIỀN THÁNG (CÓ TÍNH TIỀN PHÁT SINH)
 const StudentMonthMoney = ({ studentId, selectedDate, refreshTrigger }) => {
@@ -49,7 +58,7 @@ const StudentMonthMoney = ({ studentId, selectedDate, refreshTrigger }) => {
 
   return (
     <div className="student-money">
-      {loading ? '...' : `${monthMoney.toLocaleString('vi-VN')}đ`}
+      {loading ? '...' : formatMoney(monthMoney)}
     </div>
   );
 };
@@ -238,7 +247,7 @@ function App() {
       const { error } = await supabase.from('notes').insert([{
         student_id: selectedStudentId,
         content:    noteContent.trim(),
-        money:      parseMoneyValue(noteMoney),
+        money:      noteMoney === '-' ? 0 : parseMoneyValue(noteMoney),
         date:       selectedDate,
       }]);
       if (error) throw error;
@@ -317,11 +326,11 @@ function App() {
           const sessionMoney = (attendanceMap[key] ? 50000 : 0);
           const noteItems = noteMap[key]?.items || [];
           const extraMoney = noteItems.reduce((s, i) => s + i.money, 0);
-          const noteText = noteItems.map(i => `${i.content}${i.money > 0 ? ` (${i.money.toLocaleString('vi-VN')}đ)` : ''}`).join('; ');
+          const noteText = noteItems.map(i => `${i.content || 'Phát sinh'}${i.money !== 0 ? ` (${formatMoneyWithSign(i.money)})` : ''}`).join('; ');
           const totalMoney = sessionMoney + extraMoney;
           if (!studentTotals[student.id]) studentTotals[student.id] = { name: student.name, total: 0 };
           studentTotals[student.id].total += totalMoney;
-          report.push({ "Ngày": date, "Học sinh": student.name, "Trạng thái": attendanceMap[key] ? "Có mặt" : "Vắng", "Ghi chú": noteText, "Tiền phát sinh": extraMoney > 0 ? extraMoney.toLocaleString('vi-VN') : "", "Tiền buổi học": sessionMoney > 0 ? sessionMoney.toLocaleString('vi-VN') : "", "Tổng cộng": totalMoney > 0 ? totalMoney.toLocaleString('vi-VN') : "" });
+          report.push({ "Ngày": date, "Học sinh": student.name, "Trạng thái": attendanceMap[key] ? "Có mặt" : "Vắng", "Ghi chú": noteText, "Tiền phát sinh": extraMoney !== 0 ? formatMoneyWithSign(extraMoney) : "", "Tiền buổi học": sessionMoney > 0 ? formatMoney(sessionMoney) : "", "Tổng cộng": totalMoney !== 0 ? formatMoney(totalMoney) : "" });
         });
       });
 
@@ -338,11 +347,11 @@ function App() {
       report.push({ "Ngày": "", "Học sinh": "═════════════════════", "Trạng thái": "", "Ghi chú": "", "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": "" });
       report.push({ "Ngày": "TÓMLẠI TỪNG HỌC SINH", "Học sinh": "Tên", "Trạng thái": "Buổi (1-nay)", "Ghi chú": "Tổng tiền (1-nay)", "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": "" });
       Object.values(studentSummary).forEach(summary => {
-        report.push({ "Ngày": "", "Học sinh": summary.name, "Trạng thái": `${summary.totalSessions} buổi`, "Ghi chú": `${summary.totalMoneyFromMonthStart.toLocaleString('vi-VN')}đ`, "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": "" });
+        report.push({ "Ngày": "", "Học sinh": summary.name, "Trạng thái": `${summary.totalSessions} buổi`, "Ghi chú": formatMoney(summary.totalMoneyFromMonthStart), "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": "" });
       });
       report.push({ "Ngày": "", "Học sinh": "", "Trạng thái": "", "Ghi chú": "", "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": "" });
       const totalMoney = Object.values(studentTotals).reduce((sum, s) => sum + s.total, 0);
-      report.push({ "Ngày": "TỔNG CỘNG", "Học sinh": "", "Trạng thái": "", "Ghi chú": "", "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": totalMoney > 0 ? totalMoney.toLocaleString('vi-VN') : "" });
+      report.push({ "Ngày": "TỔNG CỘNG", "Học sinh": "", "Trạng thái": "", "Ghi chú": "", "Tiền phát sinh": "", "Tiền buổi học": "", "Tổng cộng": totalMoney !== 0 ? formatMoney(totalMoney) : "" });
 
       const ws = XLSX.utils.json_to_sheet(report); const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "BaoCao");
@@ -500,12 +509,23 @@ function App() {
         .panel-add { background: linear-gradient(135deg,#EEF2FF 0%,#F5F3FF 100%); }
         .panel-note { background: linear-gradient(135deg,#FDF4FF 0%,#FAF5FF 100%); }
 
+
+        .app-root::before { content: ''; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 10% 18%, rgba(108,99,255,.12), transparent 26%), radial-gradient(circle at 92% 10%, rgba(236,72,153,.12), transparent 24%), radial-gradient(circle at 72% 88%, rgba(67,197,158,.10), transparent 28%); z-index: 0; }
+        .header, .main, .footer { position: relative; z-index: 1; }
+        .header::after { content: ''; position: absolute; width: 320px; height: 320px; border-radius: 50%; right: -120px; bottom: -180px; background: rgba(255,255,255,.12); filter: blur(1px); }
+        .panel { backdrop-filter: blur(10px); }
+        .panel-header { background: linear-gradient(135deg, rgba(255,255,255,.96) 0%, rgba(248,250,255,.92) 100%); }
+        .form-input.money-input { font-weight: 800; letter-spacing: .2px; }
+        .money-help { margin: -4px 2px 0; font-size: 11px; line-height: 1.45; color: #7c3aed; font-weight: 700; }
+        .note-item-money.positive { color: #16a34a; background: #dcfce7; border: 1px solid #86efac; }
+        .note-item-money.negative { color: #dc2626; background: #fee2e2; border: 1px solid #fecaca; }
+
         /* Notes list - ✅ Hiển thị tên học sinh + tiền phát sinh */
         .notes-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
-        .note-item { background: #fff; border-radius: 12px; padding: 10px 14px; border: 1.5px solid #e9d5ff; }
+        .note-item { background: #fff; border-radius: 14px; padding: 11px 14px; border: 1.5px solid #e9d5ff; box-shadow: 0 5px 14px rgba(126,34,206,.07); }
         .note-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px; }
         .note-item-name { font-size: 10px; font-weight: 800; color: #7e22ce; text-transform: uppercase; letter-spacing: 0.5px; }
-        .note-item-money { font-size: 11px; font-weight: 800; color: #22c55e; }
+        .note-item-money { font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 999px; }
         .note-item-content { font-size: 12px; color: #4a5073; font-weight: 600; margin-bottom: 4px; }
         .note-delete-btn { background: none; border: none; color: #fca5a5; cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 6px; transition: all .15s; }
         .note-delete-btn:hover { background: #fee2e2; color: #dc2626; }
@@ -742,7 +762,7 @@ function App() {
           {/* NOTE */}
           <div className="panel panel-note">
             <div className="panel-header" style={{ borderBottomColor: '#E9D5FF' }}>
-              <span className="panel-title" style={{ color: '#7E22CE' }}>📝 Nhật ký hôm nay</span>
+              <span className="panel-title" style={{ color: '#7E22CE' }}>📝 Nhật ký & phát sinh</span>
             </div>
             <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <select className="form-input" value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
@@ -751,11 +771,15 @@ function App() {
               </select>
               <textarea className="form-input" value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Lời nhắn cho phụ huynh..." />
               <input
-                type="text" inputMode="numeric" className="form-input"
-                value={noteMoney ? Number(noteMoney).toLocaleString('vi-VN') : ''}
-                onChange={(e) => { const raw = e.target.value.replace(/\./g, '').replace(/,/g, ''); if (raw === '' || /^\d+$/.test(raw)) setNoteMoney(raw); }}
-                placeholder="Tiền phát sinh (nếu có)"
+                type="text" inputMode="numeric" className="form-input money-input"
+                value={noteMoney && noteMoney !== '-' ? Number(noteMoney).toLocaleString('vi-VN') : noteMoney}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\./g, '').replace(/,/g, '').replace(/\s/g, '');
+                  if (raw === '' || raw === '-' || /^-?\d+$/.test(raw)) setNoteMoney(raw);
+                }}
+                placeholder="Tiền phát sinh: VD 50000 hoặc -20000 để hoàn trả"
               />
+              <p className="money-help">💡 Nhập số âm, ví dụ <b>-20000</b>, để hoàn trả/khấu trừ khoản phát sinh.</p>
               <button className="btn-primary" onClick={handleSaveNote} style={{ background: 'linear-gradient(135deg,#A855F7 0%,#EC4899 100%)', color: '#fff', boxShadow: '0 6px 18px rgba(168,85,247,.35)' }}>
                 LƯU GHI CHÚ 💖
               </button>
@@ -771,7 +795,7 @@ function App() {
                       <div key={n.id} className="note-item">
                         <div className="note-item-header">
                           <span className="note-item-name">👤 {n.studentName || students.find(s => String(s.id) === String(n.student_id))?.name || 'Không rõ học sinh'}</span>
-                          {parseMoneyValue(n.money) > 0 && <span className="note-item-money">+{parseMoneyValue(n.money).toLocaleString('vi-VN')}đ</span>}
+                          {parseMoneyValue(n.money) !== 0 && <span className={`note-item-money ${moneyToneClass(parseMoneyValue(n.money))}`}>{formatMoneyWithSign(parseMoneyValue(n.money))}</span>}
                           <button
                             className="note-delete-btn"
                             onClick={async () => {

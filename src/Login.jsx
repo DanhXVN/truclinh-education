@@ -55,7 +55,7 @@ export default function Login({ onLogin }) {
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
-      background: 'radial-gradient(circle at 20% 20%, #dbeafe 0%, #ede9fe 40%, #fce7f3 100%)',
+      background: 'radial-gradient(circle at 18% 18%, #dbeafe 0%, #ede9fe 36%, #fdf2f8 70%, #f8fafc 100%)',
       padding: 16
     }}>
       <div style={{
@@ -85,7 +85,7 @@ export default function Login({ onLogin }) {
         padding: isMobile ? '22px 16px 18px' : '26px 22px 22px',
         background: 'rgba(255,255,255,0.93)',
         border: '1.5px solid #e2e8f0',
-        boxShadow: '0 22px 55px rgba(76, 63, 160, 0.18)',
+        boxShadow: '0 26px 70px rgba(76, 63, 160, 0.22)',
         backdropFilter: 'blur(6px)',
         position: 'relative',
         zIndex: 2
@@ -123,7 +123,7 @@ export default function Login({ onLogin }) {
             color: '#64748b',
             fontWeight: 700
           }}>
-            Quản lý điểm danh - ghi chú - học phí
+            Điểm danh • Nhật ký • Học phí
           </p>
         </div>
 
@@ -135,7 +135,7 @@ export default function Login({ onLogin }) {
           marginBottom: 14
         }}>
           <p style={{ margin: 0, fontSize: 13, color: '#5b21b6', fontWeight: 700 }}>
-            👋 Chào mừng cô quay lại hệ thống
+            👋 Chào mừng cô quay lại
           </p>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: '#475569', fontWeight: 600 }}>
             Vui lòng đăng nhập để tiếp tục quản lý lớp học.
@@ -233,10 +233,10 @@ export default function Login({ onLogin }) {
             fontWeight: 800,
             fontSize: 14,
             cursor: loading ? 'wait' : 'pointer',
-            boxShadow: '0 10px 24px rgba(168,85,247,.35)'
+            boxShadow: '0 12px 28px rgba(168,85,247,.38)', transition: 'transform .15s ease, box-shadow .15s ease, opacity .15s ease', opacity: loading ? .72 : 1
           }}
         >
-          {loading ? 'Đang đăng nhập...' : 'Đăng nhập hệ thống'}
+          {loading ? 'Đang đăng nhập...' : 'Đăng nhập vào lớp học'}
         </button>
         <p style={{ textAlign: 'center', margin: '12px 0 0', fontSize: 11, color: '#64748b', fontWeight: 700 }}>
           Hệ thống quản lý Trúc Linh Education Center

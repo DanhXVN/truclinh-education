@@ -25,14 +25,15 @@ function StudentSchedule({ students, onClose }) {
   const [isModalHovered, setIsModalHovered] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
 
+  // ✅ FIX: Đổi thứ tự - bắt đầu từ Thứ Hai (1) kết thúc Chủ Nhật (0)
   const days = [
-    { id: 0, name: 'Chủ Nhật', label: 'CN' },
     { id: 1, name: 'Thứ Hai', label: 'T2' },
     { id: 2, name: 'Thứ Ba', label: 'T3' },
     { id: 3, name: 'Thứ Tư', label: 'T4' },
     { id: 4, name: 'Thứ Năm', label: 'T5' },
     { id: 5, name: 'Thứ Sáu', label: 'T6' },
-    { id: 6, name: 'Thứ Bảy', label: 'T7' }
+    { id: 6, name: 'Thứ Bảy', label: 'T7' },
+    { id: 0, name: 'Chủ Nhật', label: 'CN' }
   ];
 
   useEffect(() => {
@@ -48,7 +49,8 @@ function StudentSchedule({ students, onClose }) {
   const fetchSchedules = async () => {
     try {
       setLoading(true);
-      const { data } = await supabase.from('student_schedules').select('*');
+      const { data, error } = await supabase.from('student_schedules').select('*');
+      if (error) throw error;
       const schedulesMap = {};
       (data || []).forEach(schedule => {
         const key = `${schedule.student_id}_${schedule.day_of_week}`;
@@ -69,32 +71,40 @@ function StudentSchedule({ students, onClose }) {
     try {
       if (scheduleId) {
         // DELETE nếu đã có
-        await supabase.from('student_schedules').delete().eq('id', scheduleId);
+        const { error: deleteError } = await supabase.from('student_schedules').delete().eq('id', scheduleId);
+        if (deleteError) throw deleteError;
         const newSchedules = { ...schedules };
         delete newSchedules[key];
         setSchedules(newSchedules);
       } else {
         // ✅ FIX #1: Kiểm tra xem có lịch cũ chưa? Nếu có thì xóa rồi thêm mới
         // (Tránh duplicate key constraint violation)
-        const { data: existingSchedule } = await supabase
+        const { data: existingSchedule, error: findError } = await supabase
           .from('student_schedules')
           .select('id')
           .eq('student_id', studentId)
           .eq('day_of_week', dayOfWeek)
-          .single();
+          .maybeSingle();
+
+        if (findError) throw findError;
 
         if (existingSchedule) {
           // Xóa lịch cũ nếu vô tình còn
-          await supabase.from('student_schedules').delete().eq('id', existingSchedule.id);
+          const { error: cleanupError } = await supabase.from('student_schedules').delete().eq('id', existingSchedule.id);
+          if (cleanupError) throw cleanupError;
         }
 
         // INSERT lịch mới
-        const { error } = await supabase.from('student_schedules').insert([
-          {
-            student_id: studentId,
-            day_of_week: dayOfWeek
-          }
-        ]);
+        const { data: insertedSchedule, error } = await supabase
+          .from('student_schedules')
+          .insert([
+            {
+              student_id: studentId,
+              day_of_week: dayOfWeek
+            }
+          ])
+          .select('id')
+          .single();
 
         if (error) {
           // Nếu vẫn lỗi duplicate, thì làm refresh lại dữ liệu
@@ -109,7 +119,7 @@ function StudentSchedule({ students, onClose }) {
         // UPDATE schedules state
         setSchedules({
           ...schedules,
-          [key]: true // Đánh dấu là đã có
+          [key]: insertedSchedule?.id // Lưu đúng ID để bấm xóa ngay vẫn hoạt động
         });
       }
     } catch (error) {
@@ -130,7 +140,7 @@ function StudentSchedule({ students, onClose }) {
   if (loading) {
     return (
       <div style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)',
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,.52)', backdropFilter: 'blur(6px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
       }}>
         <div style={{
@@ -150,7 +160,7 @@ function StudentSchedule({ students, onClose }) {
       padding: '16px'
     }} onClick={onClose}>
       <div style={{
-        background: 'linear-gradient(180deg, #ffffff 0%, #fafaff 100%)',
+        background: 'linear-gradient(180deg, #ffffff 0%, #f8f7ff 100%)',
         borderRadius: 28, padding: isMobile ? '20px 14px' : '28px 22px',
         maxHeight: '85vh', overflowY: 'auto', maxWidth: '760px', width: '100%',
         boxShadow: '0 20px 60px rgba(108,99,255,.25)',
@@ -160,10 +170,13 @@ function StudentSchedule({ students, onClose }) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           marginBottom: 14, borderBottom: '2px solid #efedff', paddingBottom: 14
         }}>
-          <h2 style={{
-            fontFamily: "'Nunito', sans-serif", fontSize: 22, fontWeight: 800,
-            color: '#1a1d2e', margin: 0
-          }}>📅 Lịch học trong tuần</h2>
+          <div>
+            <h2 style={{
+              fontFamily: "'Nunito', sans-serif", fontSize: 22, fontWeight: 900,
+              color: '#1a1d2e', margin: 0
+            }}>📅 Lịch học trong tuần</h2>
+            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12, fontWeight: 700 }}>Sắp xếp từ Thứ Hai đến Chủ Nhật • Bấm vào từng ngày để bật/tắt lịch học</p>
+          </div>
           <button onClick={onClose} style={{
             background: isModalHovered ? '#fee2e2' : 'transparent',
             border: isModalHovered ? '1px solid #fca5a5' : '1px solid transparent',
